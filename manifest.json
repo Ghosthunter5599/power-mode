@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "ghosthunter5599.power-mode",
+  "name": "Power Mode Controller",
+  "version": "1.0.0",
+  "author": "Ghosthunter5599",
+  "description": "Dynamic CPU/GPU Power Profile Switcher, RAPL Wattage Tuner & Hardware Telemetry",
+  "repository": "https://github.com/Ghosthunter5599/power-mode",
+  "license": "MIT",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "PowerMode.qml"
+  },
+  "barWidget": {
+    "displayName": "Power Mode",
+    "description": "Interactive CPU and GPU power management panel with custom wattage sliders",
+    "category": "Hardware",
+    "allowMultiple": false
+  }
+}
