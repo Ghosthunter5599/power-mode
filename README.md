@@ -7,6 +7,12 @@
 
 > **Universal Linux Dynamic CPU/GPU Power Profiler, Package Power Orchestrator & Telemetry Manager.**
 
+<p align="center">
+  <img src="assets/preview.png" alt="Power Mode Quickshell Popup Panel" width="460">
+</p>
+
+---
+
 `power-mode` is a lightweight, zero-dependency Linux tool that synchronously controls **Intel RAPL (PL1/PL2) sustained wattages**, **CPU Energy Performance Preferences (EPP)**, **ACPI Platform Profiles**, and **NVIDIA Discrete GPU TGP** from a unified Terminal UI (TUI), CLI, or desktop top-bar widget.
 
 ---

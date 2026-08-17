@@ -8,6 +8,10 @@
   "homepage": "https://github.com/Ghosthunter5599/power-mode",
   "repository": "https://github.com/Ghosthunter5599/power-mode",
   "license": "MIT",
+  "preview": "assets/preview.png",
+  "screenshots": [
+    "assets/preview.png"
+  ],
   "kinds": [
     "bar-widget"
   ],
