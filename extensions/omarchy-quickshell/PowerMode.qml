@@ -400,16 +400,16 @@ Panel {
 
             Column {
               width: (parent.width - parent.spacing) / 2
-              spacing: Style.spacing.labelGap
+              spacing: Style.space(4)
               InfoPair { label: "CPU Burst (PL2)"; value: root.cpuPL2 + " W" }
-              InfoPair { label: "CPU Governor (EPP)"; value: root.cpuEPP }
+              InfoPair { label: "CPU EPP"; value: root.formatEpp(root.cpuEPP) }
             }
 
             Column {
               width: (parent.width - parent.spacing) / 2
-              spacing: Style.spacing.labelGap
-              InfoPair { label: "GPU Current Draw"; value: root.gpuDraw }
-              InfoPair { label: "GPU Temperature"; value: root.gpuTemp }
+              spacing: Style.space(4)
+              InfoPair { label: "GPU Draw"; value: root.gpuDraw }
+              InfoPair { label: "GPU Temp"; value: root.gpuTemp }
             }
           }
         }
@@ -417,29 +417,44 @@ Panel {
     }
   }
 
-  component InfoPair: Row {
+  function formatEpp(epp) {
+    var s = String(epp || "").toLowerCase()
+    if (s.indexOf("balance_perf") >= 0) return "Balanced"
+    if (s.indexOf("balance_power") >= 0) return "Power Saver"
+    if (s.indexOf("perf") >= 0) return "Performance"
+    if (s.indexOf("power") >= 0) return "Power Saver"
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "—"
+  }
+
+  component InfoPair: Item {
     property string label: ""
     property string value: ""
 
     width: parent.width
-    spacing: Style.space(8)
+    implicitHeight: Math.max(lbl.implicitHeight, val.implicitHeight)
 
-    InfoLabel { text: label }
-    Item { width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth - parent.spacing * 2); height: 1 }
-    InfoValue { text: value }
-  }
+    Text {
+      id: lbl
+      text: label
+      color: root.barForeground
+      opacity: 0.6
+      font.family: root.bar ? root.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.bodySmall
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      elide: Text.ElideRight
+      width: Math.min(implicitWidth, parent.width - val.implicitWidth - Style.space(6))
+    }
 
-  component InfoLabel: Text {
-    color: root.barForeground
-    opacity: 0.6
-    font.family: root.bar ? root.bar.fontFamily : Style.font.family
-    font.pixelSize: Style.font.bodySmall
-  }
-
-  component InfoValue: Text {
-    color: root.barForeground
-    font.family: root.bar ? root.bar.fontFamily : Style.font.family
-    font.pixelSize: Style.font.bodySmall
-    font.bold: true
+    Text {
+      id: val
+      text: value
+      color: root.barForeground
+      font.family: root.bar ? root.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.bodySmall
+      font.bold: true
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+    }
   }
 }
