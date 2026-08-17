@@ -11,6 +11,39 @@
 
 ---
 
+## 🎯 Why This Tool Exists & Who Needs It
+
+### 🔍 The Core Problem: Shared Laptop Cooling & Total Power Limits
+In modern laptops (especially gaming and mobile workstation laptops), the **CPU and GPU share the same copper heat pipes, vapor chamber, and exhaust fin arrays**. Furthermore, laptops operate under a strict **Total Power Budget** constrained by the AC power adapter (e.g., 170W – 230W) and internal VRM thermal limits.
+
+When both the CPU and GPU attempt to boost simultaneously under demanding tasks:
+1. **Thermal Cross-Talk**: Heat from an aggressively boosting CPU saturates the shared heat pipes, heating up the GPU (and vice versa).
+2. **Thermal Throttling**: Both chips hit their 95°C–100°C thermal ceilings and aggressively downclock, resulting in frame stutter, dropped clock speeds, and loud fan noise.
+3. **Power Starvation**: The CPU may draw 85W+ on minor background threads while the GPU is starved of electrical wattage, dropping GPU graphics performance.
+
+---
+
+### 💡 The Solution: Active Thermal & Electrical Budget Balancing
+By **actively regulating and capping the power draw of the idle or less-critical component**, you free up both **electrical wattage** and **thermal cooling headroom** for the component that actually needs it:
+
+* 🎮 **Gaming & 3D Rendering (GPU-Bound)**:
+  * By constraining the CPU from 85W down to 35W (which is plenty for games), CPU temperature drops by **15°C–25°C**.
+  * This newly freed cooling capacity allows the **NVIDIA GPU to sustain its maximum 95W–140W Dynamic Boost clock** without thermal throttling or frame drops.
+* ⚙️ **Code Compilation, Physics & Data Science (CPU-Bound)**:
+  * By capping the GPU to 30W–40W, the laptop can deliver **85W–115W sustained all-core Turbo Boost** to the CPU, drastically cutting compilation and computation times.
+* 🔋 **On Battery / Light Workloads**:
+  * Capping both silicon chips to low power envelopes eliminates background spikes, ensures near-silent fans, and doubles battery life.
+
+---
+
+### 👥 Who Is This For?
+* **Laptop Gamers & 3D Artists**: Stop CPU thermal throttling from killing GPU frame rates in heavy 3D games and Unreal/Blender rendering.
+* **Software Developers & Engineers**: Maximize sustained multi-core CPU compilation performance (Rust, C++, Linux kernel builds) without heat saturation.
+* **Machine Learning & Data Practitioners**: Run local LLM inference or CPU training on laptops with consistent, un-throttled thermal stability.
+* **Linux Laptop Power Users**: Anyone who wants fine-grained, on-the-fly control over their hardware without depending on bloated proprietary OEM software.
+
+---
+
 ## 🌟 Key Features
 
 * **🔬 Zero Dependencies**: Built entirely using Python's standard library (`curses`, `sysfs`, `subprocess`). Runs out of the box on any Linux distribution (Arch, Fedora, Ubuntu, Debian, CachyOS, Void, NixOS).
