@@ -71,11 +71,11 @@ By **actively regulating and capping the power draw of the idle or less-critical
 ### 1. Devices with Dedicated NVIDIA GPU
 | Profile | CPU PL1 (Sustained) | CPU PL2 (Burst) | GPU Power Limit (TGP) | CPU Governor (EPP) | ACPI Profile | Target Workload |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **GPU** | 35 W | 55 W | **MAX (e.g. 95-100W)** | `performance` | `performance` | 3D Gaming, CUDA, Blender, Unreal Engine |
-| **CACHYOS** *(if detected)* | 85 W | 162 W | **MAX (e.g. 95-100W)** | `performance` | `performance` | CachyOS Gaming / Max Multi-Threaded Throughput |
-| **BALANCED** | 25 W | 45 W | ~60 W | `balance_performance` | `balanced` | Daily browsing, media, moderate multitasking |
-| **CPU** | 85 W | 162 W | ~40 W | `performance` | `performance` | Code compilation (Rust/C++), CPU rendering, physics simulation |
-| **ECO** | 15 W | 25 W | **MIN (e.g. 5-35W)** | `power` | `low-power` | Maximum battery conservation, silent fans |
+| **GPU** | 35 W | 55 W | **95 W (MAX)** | `performance` | `performance` | **AAA Gaming & GPU ML Training** (Keeps CPU cool so GPU boosts to maximum) |
+| **CACHYOS** *(if detected)* | 85 W | 162 W | **95 W (MAX)** | `performance` | `performance` | **CachyOS Gaming & Throughput** (BORE scheduler with maximum all-round power) |
+| **BALANCED** | 25 W | 45 W | 60 W | `balance_performance` | `balanced` | **Daily Multitasking & Browsing** (Balanced thermal curve & quiet fans) |
+| **CPU** | 85 W | 162 W | 40 W | `performance` | `performance` | **Physics Simulation & Compilation** (Max CPU cores for simulations & Rust/C++ builds) |
+| **ECO** | 15 W | 25 W | MIN (~35W) | `power` | `low-power` | **Maximum Battery Life & Silent Operation** |
 
 ### 2. Devices without Dedicated GPU (Integrated / CPU-Only)
 | Profile | CPU PL1 (Sustained) | CPU PL2 (Burst) | CPU Governor (EPP) | ACPI Profile | Target Workload |

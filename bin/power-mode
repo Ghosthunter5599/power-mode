@@ -24,17 +24,17 @@ PLATFORM_PROFILE_CHOICES = "/sys/firmware/acpi/platform_profile_choices"
 
 # --- Simulation Flag ---
 SIMULATION_MODE = False
-STATE_FILE = os.path.expanduser("~/.local/state/power-mode/state.json")
+STATE_FILE = "/tmp/power_mode_state.json"
 
 def save_state(profile_key, cpu_pl1, gpu_limit):
     try:
-        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         with open(STATE_FILE, "w") as f:
             json.dump({
                 "active_profile": profile_key,
                 "cpu_pl1_w": cpu_pl1,
                 "gpu_limit_w": gpu_limit
             }, f)
+        os.chmod(STATE_FILE, 0o666)
     except Exception:
         pass
 
@@ -203,8 +203,8 @@ def build_profiles(cpu_info, gpu_info, kernel_info):
     if has_gpu:
         # GPU System Profiles
         profiles["gpu"] = {
-            "name": "GPU Max Performance Mode",
-            "desc": "Prioritizes GPU rendering & gaming throughput. CPU constrained to safe thermal budget.",
+            "name": "Gaming & GPU ML Training Mode",
+            "desc": "Prioritizes GPU rendering, AAA gaming & CUDA ML training. CPU capped to 35W to keep GPU cool.",
             "cpu_pl1_w": 35,
             "cpu_pl2_w": 55,
             "gpu_limit_w": gpu_max,
@@ -213,8 +213,8 @@ def build_profiles(cpu_info, gpu_info, kernel_info):
         }
         if kernel_info["is_cachyos"]:
             profiles["cachy"] = {
-                "name": "CachyOS Maximum Dynamic Performance",
-                "desc": "Tuned for CachyOS BORE/EEVDF schedulers. Max GPU TGP with sustained 85W CPU budget.",
+                "name": "CachyOS Gaming & Maximum Performance",
+                "desc": "Tuned for CachyOS BORE scheduler. Maximum simultaneous CPU and GPU gaming throughput.",
                 "cpu_pl1_w": 85,
                 "cpu_pl2_w": 162,
                 "gpu_limit_w": gpu_max,
@@ -222,7 +222,7 @@ def build_profiles(cpu_info, gpu_info, kernel_info):
                 "platform_profile": "performance"
             }
         profiles["balanced"] = {
-            "name": "Balanced Mode",
+            "name": "Daily Multitasking & Browsing",
             "desc": "Standard daily thermal envelope with balanced fan acoustic curve.",
             "cpu_pl1_w": 25,
             "cpu_pl2_w": 45,
@@ -231,8 +231,8 @@ def build_profiles(cpu_info, gpu_info, kernel_info):
             "platform_profile": "balanced"
         }
         profiles["cpu"] = {
-            "name": "CPU Compute Mode",
-            "desc": "Maximizes CPU core frequencies and compilation speed while reigning in GPU wattage.",
+            "name": "Physics Simulation & CPU Compute",
+            "desc": "Maximizes CPU core frequencies for physics simulations, Blender CPU rendering & code compilation.",
             "cpu_pl1_w": 85,
             "cpu_pl2_w": 162,
             "gpu_limit_w": gpu_cpu,
@@ -353,22 +353,24 @@ def detect_active_profile(cpu_info, gpu_info, profiles):
     saved = load_state()
     cur_pl1 = cpu_info["pl1_w"]
 
-    # If saved state matches current CPU PL1, return saved active profile
+    # 1. If saved state matches current CPU PL1, return saved active profile
     if saved and "active_profile" in saved:
         p_key = saved["active_profile"]
         if p_key in profiles:
             if profiles[p_key]["cpu_pl1_w"] == cur_pl1:
                 return p_key
+        elif p_key == "custom":
+            return "custom"
 
     cur_gpu = int(gpu_info["power_limit_w"]) if gpu_info["has_gpu"] else 0
 
-    # 1. Exact match (CPU + GPU)
+    # 2. Exact match (CPU + GPU)
     for key, prof in profiles.items():
         if prof["cpu_pl1_w"] == cur_pl1:
             if not gpu_info["has_gpu"] or prof["gpu_limit_w"] == cur_gpu:
                 return key
 
-    # 2. Match by CPU PL1 target
+    # 3. Match by CPU PL1 target
     for key, prof in profiles.items():
         if prof["cpu_pl1_w"] == cur_pl1:
             return key

@@ -25,6 +25,13 @@ Panel {
   property int previewGpuLimit: -1
   readonly property var profileKeys: ["gpu", "cachy", "balanced", "cpu", "custom"]
   readonly property var profileLabels: ["GPU", "Cachy", "Balanced", "CPU", "Custom"]
+  readonly property var profileTooltips: [
+    "GPU Gaming & ML Training (95W GPU / 35W CPU)",
+    "CachyOS Gaming & Max Boost (95W GPU / 85W CPU)",
+    "Daily Multitasking & Browsing (60W GPU / 25W CPU)",
+    "Physics Simulation & Heavy Compilation (40W GPU / 85W CPU)",
+    "Custom Power Limits (Manual slider tuning)"
+  ]
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -39,11 +46,11 @@ Panel {
 
   function heroSubtitle() {
     var prof = activeProfile.toUpperCase()
-    if (prof === "GPU") return "GPU MODE · 95W GPU / 35W CPU"
-    if (prof === "CACHY") return "CACHYOS MAX · 95W GPU / 85W CPU"
-    if (prof === "BALANCED") return "BALANCED · 60W GPU / 25W CPU"
-    if (prof === "CPU") return "CPU MODE · 40W GPU / 85W CPU"
-    return "CUSTOM · " + displayGpuLimit() + "W GPU / " + displayCpuPL1() + "W CPU"
+    if (prof === "GPU") return "GAMING & ML · 95W GPU / 35W CPU"
+    if (prof === "CACHY") return "CACHYOS GAMING · 95W GPU / 85W CPU"
+    if (prof === "BALANCED") return "DAILY & BROWSING · 60W GPU / 25W CPU"
+    if (prof === "CPU") return "SIMULATION & COMPUTE · 40W GPU / 85W CPU"
+    return "CUSTOM TUNED · " + displayGpuLimit() + "W GPU / " + displayCpuPL1() + "W CPU"
   }
 
   function refresh() {
@@ -276,6 +283,7 @@ Panel {
 
                 width: profileRow.cellWidth
                 text: root.profileLabels[index]
+                tooltipText: root.profileTooltips[index]
                 fontSize: Style.font.bodySmall
                 foreground: root.barForeground
                 fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
