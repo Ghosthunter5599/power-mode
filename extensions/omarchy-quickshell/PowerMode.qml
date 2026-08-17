@@ -54,6 +54,20 @@ Panel {
   function setProfile(key) {
     previewCpuPL1 = -1
     previewGpuLimit = -1
+    root.activeProfile = key
+    if (key === "gpu") {
+      root.cpuPL1 = 35
+      root.gpuLimit = 95
+    } else if (key === "cachy") {
+      root.cpuPL1 = 85
+      root.gpuLimit = 95
+    } else if (key === "balanced") {
+      root.cpuPL1 = 25
+      root.gpuLimit = 60
+    } else if (key === "cpu") {
+      root.cpuPL1 = 85
+      root.gpuLimit = 40
+    }
     actionProc.command = ["power-mode", "--" + key]
     if (!actionProc.running) actionProc.running = true
   }
