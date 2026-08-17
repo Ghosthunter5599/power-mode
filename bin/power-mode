@@ -400,27 +400,36 @@ def run_tui(stdscr, cpu_info, gpu_info, kernel_info, profiles):
         stdscr.clear()
         h, w = stdscr.getmaxyx()
 
+        def safe_addstr(y, x, text, attr=0):
+            if 0 <= y < h and 0 <= x < w:
+                try:
+                    stdscr.addstr(y, x, str(text)[:max(0, w - x - 1)], attr)
+                except curses.error:
+                    pass
+
         # Header
         title = "⚡ POWER-MODE UNIVERSAL LINUX PROFILER"
         if SIMULATION_MODE:
             title += " [SIMULATION / DRY-RUN]"
-        stdscr.addstr(1, 2, title, curses.color_pair(2) | curses.A_BOLD)
-        stdscr.addstr(2, 2, "─" * min(w - 4, 76), curses.A_DIM)
+        safe_addstr(1, 2, title, curses.color_pair(2) | curses.A_BOLD)
+        safe_addstr(2, 2, "─" * min(w - 4, 76), curses.A_DIM)
 
         # Hardware & Kernel Info
         k_tag = " (CachyOS Kernel)" if kernel_info["is_cachyos"] else ""
-        stdscr.addstr(3, 2, f"CPU: {cpu_info['name']} ({cpu_info['cores']} Cores) | Kernel: {kernel_info['version']}{k_tag}", curses.A_DIM)
+        safe_addstr(3, 2, f"CPU: {cpu_info['name']} ({cpu_info['cores']} Cores) | Kernel: {kernel_info['version']}{k_tag}", curses.A_DIM)
         if gpu_info["has_gpu"]:
-            stdscr.addstr(4, 2, f"GPU: {gpu_info['name']} | Live Draw: {gpu_info['power_draw_w']} | Temp: {gpu_info['temp']}", curses.color_pair(3))
+            safe_addstr(4, 2, f"GPU: {gpu_info['name']} | Live Draw: {gpu_info['power_draw_w']} | Temp: {gpu_info['temp']}", curses.color_pair(3))
         else:
-            stdscr.addstr(4, 2, "GPU: Integrated / None (CPU-Accelerated Mode Active)", curses.color_pair(3))
+            safe_addstr(4, 2, "GPU: Integrated / None (CPU-Accelerated Mode Active)", curses.color_pair(3))
 
         # Warning
-        stdscr.addstr(6, 2, "⚠️  SAFETY NOTE: Verify adequate cooling and OEM AC adapter capacity.", curses.color_pair(4) | curses.A_BOLD)
+        safe_addstr(6, 2, "⚠️  SAFETY NOTE: Verify adequate cooling and OEM AC adapter capacity.", curses.color_pair(4) | curses.A_BOLD)
 
         # Profile Options
         row = 8
         for i, key in enumerate(profile_keys):
+            if row >= h - 4:
+                break
             prof = profiles[key]
             is_sel = (i == selected_idx)
             is_act = (key == active_key)
@@ -436,20 +445,21 @@ def run_tui(stdscr, cpu_info, gpu_info, kernel_info, profiles):
 
             gpu_txt = f" | GPU: {prof['gpu_limit_w']}W" if gpu_info["has_gpu"] else ""
             line = f"{marker}[ {key.upper()} ] {prof['name']}{act_tag} (CPU: {prof['cpu_pl1_w']}W{gpu_txt})"
-            stdscr.addstr(row, 2, line[:w-4], attr)
+            safe_addstr(row, 2, line, attr)
 
             desc_attr = curses.color_pair(2) if is_sel else curses.A_DIM
-            stdscr.addstr(row + 1, 6, prof['desc'][:w-8], desc_attr)
+            safe_addstr(row + 1, 6, prof['desc'], desc_attr)
             row += 3
 
         # Custom entry
-        is_custom_sel = (selected_idx == len(profile_keys))
-        custom_marker = "➤ " if is_custom_sel else "  "
-        c_attr = (curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD) if is_custom_sel else curses.color_pair(5)
-        stdscr.addstr(row, 2, f"{custom_marker}[ CUSTOM ] Interactive Power Setting Tuner (Manual Wattage Sliders)", c_attr)
+        if row < h - 3:
+            is_custom_sel = (selected_idx == len(profile_keys))
+            custom_marker = "➤ " if is_custom_sel else "  "
+            c_attr = (curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD) if is_custom_sel else curses.color_pair(5)
+            safe_addstr(row, 2, f"{custom_marker}[ CUSTOM ] Interactive Power Setting Tuner (Manual Wattage Sliders)", c_attr)
 
         # Status / Message bar
-        stdscr.addstr(h - 2, 2, msg[:w-4], curses.color_pair(3) | curses.A_BOLD)
+        safe_addstr(h - 2, 2, msg, curses.color_pair(3) | curses.A_BOLD)
 
         stdscr.refresh()
 
@@ -507,24 +517,31 @@ def run_custom_editor(stdscr, cpu_info, gpu_info):
         stdscr.clear()
         h, w = stdscr.getmaxyx()
 
-        stdscr.addstr(1, 2, "⚙️  CUSTOM POWER SETTING EDITOR", curses.color_pair(5) | curses.A_BOLD)
-        stdscr.addstr(2, 2, "─" * min(w - 4, 76), curses.A_DIM)
-        stdscr.addstr(4, 2, "Adjust sustained power envelopes using [← / →] in 5W steps.", curses.A_DIM)
+        def safe_addstr(y, x, text, attr=0):
+            if 0 <= y < h and 0 <= x < w:
+                try:
+                    stdscr.addstr(y, x, str(text)[:max(0, w - x - 1)], attr)
+                except curses.error:
+                    pass
+
+        safe_addstr(1, 2, "⚙️  CUSTOM POWER SETTING EDITOR", curses.color_pair(5) | curses.A_BOLD)
+        safe_addstr(2, 2, "─" * min(w - 4, 76), curses.A_DIM)
+        safe_addstr(4, 2, "Adjust sustained power envelopes using [← / →] in 5W steps.", curses.A_DIM)
 
         # Field 0: CPU PL1
         sel_0 = (field_idx == 0)
         attr_0 = (curses.color_pair(2) | curses.A_REVERSE | curses.A_BOLD) if sel_0 else curses.color_pair(2)
-        stdscr.addstr(6, 4, f"CPU Sustained Power Limit (PL1): [ {edit_cpu:3d} W ]", attr_0)
-        stdscr.addstr(7, 6, "Sets long-duration CPU package power cap via Intel RAPL.", curses.A_DIM)
+        safe_addstr(6, 4, f"CPU Sustained Power Limit (PL1): [ {edit_cpu:3d} W ]", attr_0)
+        safe_addstr(7, 6, "Sets long-duration CPU package power cap via Intel RAPL.", curses.A_DIM)
 
         # Field 1: GPU TGP
         if has_gpu:
             sel_1 = (field_idx == 1)
             attr_1 = (curses.color_pair(3) | curses.A_REVERSE | curses.A_BOLD) if sel_1 else curses.color_pair(3)
-            stdscr.addstr(9, 4, f"GPU Total Graphics Power (TGP): [ {edit_gpu:3d} W ] (Range: {gpu_min}W - {gpu_max}W)", attr_1)
-            stdscr.addstr(10, 6, "Sets discrete NVIDIA GPU power limiter via nvidia-smi.", curses.A_DIM)
+            safe_addstr(9, 4, f"GPU Total Graphics Power (TGP): [ {edit_gpu:3d} W ] (Range: {gpu_min}W - {gpu_max}W)", attr_1)
+            safe_addstr(10, 6, "Sets discrete NVIDIA GPU power limiter via nvidia-smi.", curses.A_DIM)
 
-        stdscr.addstr(13, 2, "Controls: [↑/↓] Change field | [←/→] Adjust wattage | [Enter] Apply | [Esc] Cancel", curses.color_pair(3) | curses.A_BOLD)
+        safe_addstr(min(h - 2, 13), 2, "Controls: [↑/↓] Change field | [←/→] Adjust wattage | [Enter] Apply | [Esc] Cancel", curses.color_pair(3) | curses.A_BOLD)
 
         stdscr.refresh()
         ch = stdscr.getch()
