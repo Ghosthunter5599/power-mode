@@ -193,9 +193,10 @@ class HardwareDetector:
 # --- Dynamic Profile Builder ---
 def build_profiles(cpu_info, gpu_info, kernel_info):
     has_gpu = gpu_info["has_gpu"]
-    gpu_max = gpu_info["max_limit"] if has_gpu else 0
+    gpu_max = 95 if has_gpu and gpu_info["max_limit"] >= 95 else (gpu_info["max_limit"] if has_gpu else 0)
     gpu_min = gpu_info["min_limit"] if has_gpu else 0
-    gpu_mid = int(gpu_min + (gpu_max - gpu_min) * 0.6) if has_gpu else 0
+    gpu_mid = 60 if has_gpu else 0
+    gpu_cpu = 40 if has_gpu else 0
 
     profiles = {}
 
@@ -234,7 +235,7 @@ def build_profiles(cpu_info, gpu_info, kernel_info):
             "desc": "Maximizes CPU core frequencies and compilation speed while reigning in GPU wattage.",
             "cpu_pl1_w": 85,
             "cpu_pl2_w": 162,
-            "gpu_limit_w": max(gpu_min, int(gpu_max * 0.4)),
+            "gpu_limit_w": gpu_cpu,
             "epp": "performance",
             "platform_profile": "performance"
         }
@@ -573,6 +574,11 @@ def main():
 
     active_key = detect_active_profile(cpu_info, gpu_info, profiles)
 
+    if active_key in profiles and profiles[active_key]["gpu_limit_w"] > 0:
+        active_gpu_limit = profiles[active_key]["gpu_limit_w"]
+    else:
+        active_gpu_limit = int(gpu_info["power_limit_w"]) if gpu_info["has_gpu"] else 0
+
     if args.json:
         out = {
             "active_profile": active_key,
@@ -585,7 +591,7 @@ def main():
             "has_gpu": gpu_info["has_gpu"],
             "gpu_name": gpu_info["name"],
             "gpu_power_draw": gpu_info["power_draw_w"],
-            "gpu_power_limit": f"{gpu_info['power_limit_w']:.2f} W" if gpu_info["has_gpu"] else "N/A",
+            "gpu_power_limit": f"{active_gpu_limit:.2f} W" if gpu_info["has_gpu"] else "N/A",
             "gpu_temp": gpu_info["temp"],
             "gpu_min_limit": gpu_info["min_limit"],
             "gpu_max_limit": gpu_info["max_limit"],
