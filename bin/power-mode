@@ -1,0 +1,561 @@
+#!/usr/bin/env python3
+"""
+Power Mode - Universal Linux Dynamic CPU/GPU Power Profiler & Controller
+Author: b47m4n
+License: MIT
+Supports: Intel RAPL, AMD EPP, ACPI Platform Profiles, NVIDIA GPU TGP, CachyOS Kernel BORE/EEVDF Schedulers, Non-GPU ML Training Mode, Simulation Mode.
+"""
+
+import sys
+import os
+import glob
+import json
+import curses
+import argparse
+import subprocess
+import platform
+
+# --- Hardware System Paths ---
+RAPL_PL1 = "/sys/class/powercap/intel-rapl/intel-rapl:0/constraint_0_power_limit_uw"
+RAPL_PL2 = "/sys/class/powercap/intel-rapl/intel-rapl:0/constraint_1_power_limit_uw"
+EPP_GLOB = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
+PLATFORM_PROFILE = "/sys/firmware/acpi/platform_profile"
+PLATFORM_PROFILE_CHOICES = "/sys/firmware/acpi/platform_profile_choices"
+
+# --- Simulation Flag ---
+SIMULATION_MODE = False
+
+def is_root():
+    return os.geteuid() == 0
+
+def run_cmd(cmd):
+    if SIMULATION_MODE:
+        return ""
+    try:
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=3)
+        return res.stdout.strip()
+    except Exception:
+        return ""
+
+def read_sys_val(path):
+    try:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return None
+
+def write_sys_val(path, val):
+    if SIMULATION_MODE:
+        return True
+    try:
+        if os.path.exists(path):
+            with open(path, "w") as f:
+                f.write(str(val))
+            return True
+    except Exception:
+        pass
+    return False
+
+# --- Hardware Probing & Environment Detection ---
+class HardwareDetector:
+    @staticmethod
+    def detect_kernel():
+        v = read_sys_val("/proc/version") or platform.release()
+        is_cachy = "cachyos" in v.lower() or "bore" in v.lower()
+        is_zen = "zen" in v.lower()
+        return {
+            "version": platform.release(),
+            "is_cachyos": is_cachy,
+            "is_zen": is_zen,
+            "raw": v.split("\n")[0] if v else platform.release()
+        }
+
+    @staticmethod
+    def detect_cpu():
+        has_rapl = os.path.exists(RAPL_PL1)
+        cur_pl1 = 0
+        cur_pl2 = 0
+        if has_rapl:
+            v1 = read_sys_val(RAPL_PL1)
+            v2 = read_sys_val(RAPL_PL2)
+            cur_pl1 = int(v1) // 1000000 if v1 and v1.isdigit() else 0
+            cur_pl2 = int(v2) // 1000000 if v2 and v2.isdigit() else 0
+
+        epp_files = glob.glob(EPP_GLOB)
+        cur_epp = read_sys_val(epp_files[0]) if epp_files else "unavailable"
+
+        acpi_prof = read_sys_val(PLATFORM_PROFILE) or "unavailable"
+
+        # CPU Model name
+        cpu_name = "Generic CPU"
+        try:
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if "model name" in line:
+                        cpu_name = line.split(":", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+
+        return {
+            "name": cpu_name,
+            "cores": os.cpu_count() or 1,
+            "has_rapl": has_rapl,
+            "pl1_w": cur_pl1,
+            "pl2_w": cur_pl2,
+            "epp": cur_epp,
+            "has_epp": len(epp_files) > 0,
+            "platform_profile": acpi_prof,
+            "has_platform_profile": os.path.exists(PLATFORM_PROFILE)
+        }
+
+    @staticmethod
+    def detect_gpu():
+        # Check NVIDIA
+        nv_out = run_cmd("nvidia-smi --query-gpu=name,power.limit,power.draw,temperature.gpu,power.min_limit,power.max_limit,power.default_limit --format=csv,noheader,nounits")
+        if nv_out and "," in nv_out:
+            parts = [p.strip() for p in nv_out.split(",")]
+            try:
+                return {
+                    "type": "nvidia",
+                    "has_gpu": True,
+                    "name": parts[0],
+                    "power_limit_w": float(parts[1]),
+                    "power_draw_w": f"{parts[2]} W",
+                    "temp": f"{parts[3]} °C",
+                    "min_limit": int(float(parts[4])),
+                    "max_limit": int(float(parts[5])),
+                    "default_limit": int(float(parts[6]))
+                }
+            except Exception:
+                pass
+
+        # Fallback: Check if AMD/Intel discrete or integrated
+        return {
+            "type": "none",
+            "has_gpu": False,
+            "name": "Integrated Graphics / None",
+            "power_limit_w": 0,
+            "power_draw_w": "N/A",
+            "temp": "N/A",
+            "min_limit": 0,
+            "max_limit": 0,
+            "default_limit": 0
+        }
+
+# --- Dynamic Profile Builder ---
+def build_profiles(cpu_info, gpu_info, kernel_info):
+    has_gpu = gpu_info["has_gpu"]
+    gpu_max = gpu_info["max_limit"] if has_gpu else 0
+    gpu_min = gpu_info["min_limit"] if has_gpu else 0
+    gpu_mid = int(gpu_min + (gpu_max - gpu_min) * 0.6) if has_gpu else 0
+
+    profiles = {}
+
+    if has_gpu:
+        # GPU System Profiles
+        profiles["gpu"] = {
+            "name": "GPU Max Performance Mode",
+            "desc": "Prioritizes GPU rendering & gaming throughput. CPU constrained to safe thermal budget.",
+            "cpu_pl1_w": 35,
+            "cpu_pl2_w": 55,
+            "gpu_limit_w": gpu_max,
+            "epp": "performance",
+            "platform_profile": "performance"
+        }
+        if kernel_info["is_cachyos"]:
+            profiles["cachy"] = {
+                "name": "CachyOS Maximum Dynamic Performance",
+                "desc": "Tuned for CachyOS BORE/EEVDF schedulers. Max GPU TGP with sustained 85W CPU budget.",
+                "cpu_pl1_w": 85,
+                "cpu_pl2_w": 162,
+                "gpu_limit_w": gpu_max,
+                "epp": "performance",
+                "platform_profile": "performance"
+            }
+        profiles["balanced"] = {
+            "name": "Balanced Mode",
+            "desc": "Standard daily thermal envelope with balanced fan acoustic curve.",
+            "cpu_pl1_w": 25,
+            "cpu_pl2_w": 45,
+            "gpu_limit_w": gpu_mid,
+            "epp": "balance_performance",
+            "platform_profile": "balanced"
+        }
+        profiles["cpu"] = {
+            "name": "CPU Compute Mode",
+            "desc": "Maximizes CPU core frequencies and compilation speed while reigning in GPU wattage.",
+            "cpu_pl1_w": 85,
+            "cpu_pl2_w": 162,
+            "gpu_limit_w": max(gpu_min, int(gpu_max * 0.4)),
+            "epp": "performance",
+            "platform_profile": "performance"
+        }
+        profiles["eco"] = {
+            "name": "Eco / Battery Saver Mode",
+            "desc": "Lowest thermal dissipation and maximum battery life.",
+            "cpu_pl1_w": 15,
+            "cpu_pl2_w": 25,
+            "gpu_limit_w": gpu_min,
+            "epp": "power",
+            "platform_profile": "low-power"
+        }
+    else:
+        # CPU-Only Machine / ML Training / Server Profiles
+        profiles["ml_train"] = {
+            "name": "CPU ML Training & High-Compute Mode",
+            "desc": "Uncapped PL1/PL2 sustained budget, all cores pinned to max performance governor.",
+            "cpu_pl1_w": 95,
+            "cpu_pl2_w": 165,
+            "gpu_limit_w": 0,
+            "epp": "performance",
+            "platform_profile": "performance"
+        }
+        if kernel_info["is_cachyos"]:
+            profiles["cachy"] = {
+                "name": "CachyOS All-Core Scheduler Max",
+                "desc": "Tuned for low-latency multi-threaded task dispatching on CachyOS kernels.",
+                "cpu_pl1_w": 85,
+                "cpu_pl2_w": 140,
+                "gpu_limit_w": 0,
+                "epp": "performance",
+                "platform_profile": "performance"
+            }
+        profiles["balanced"] = {
+            "name": "Balanced Compute Mode",
+            "desc": "Optimized power-to-thermal curve for general development.",
+            "cpu_pl1_w": 45,
+            "cpu_pl2_w": 75,
+            "gpu_limit_w": 0,
+            "epp": "balance_performance",
+            "platform_profile": "balanced"
+        }
+        profiles["eco"] = {
+            "name": "Power Saver Mode",
+            "desc": "Minimal thermal throttling, silent fans, and maximum battery conservation.",
+            "cpu_pl1_w": 15,
+            "cpu_pl2_w": 25,
+            "gpu_limit_w": 0,
+            "epp": "power",
+            "platform_profile": "low-power"
+        }
+
+    return profiles
+
+# --- Profile Applier ---
+def apply_profile(profile_key, profiles, gpu_info):
+    if SIMULATION_MODE:
+        return True
+
+    if not is_root():
+        script_path = os.path.abspath(sys.argv[0])
+        cmd = ["pkexec" if not sys.stdin.isatty() else "sudo", sys.executable, script_path, f"--{profile_key}"]
+        res = subprocess.run(cmd)
+        return res.returncode == 0
+
+    prof = profiles.get(profile_key)
+    if not prof:
+        return False
+
+    # 1. RAPL
+    if os.path.exists(RAPL_PL1):
+        write_sys_val(RAPL_PL1, prof["cpu_pl1_w"] * 1000000)
+    if os.path.exists(RAPL_PL2):
+        write_sys_val(RAPL_PL2, prof["cpu_pl2_w"] * 1000000)
+
+    # 2. EPP
+    for epp_f in glob.glob(EPP_GLOB):
+        write_sys_val(epp_f, prof["epp"])
+
+    # 3. Platform Profile
+    if os.path.exists(PLATFORM_PROFILE):
+        write_sys_val(PLATFORM_PROFILE, prof["platform_profile"])
+
+    # 4. GPU Power Limit
+    if gpu_info["has_gpu"] and prof["gpu_limit_w"] > 0:
+        run_cmd(f"nvidia-smi -pl {prof['gpu_limit_w']}")
+
+    return True
+
+def apply_custom(cpu_pl1, gpu_limit, gpu_info):
+    if SIMULATION_MODE:
+        return True
+
+    if not is_root():
+        script_path = os.path.abspath(sys.argv[0])
+        cmd = ["pkexec" if not sys.stdin.isatty() else "sudo", sys.executable, script_path, "--custom", str(cpu_pl1), str(gpu_limit)]
+        res = subprocess.run(cmd)
+        return res.returncode == 0
+
+    if os.path.exists(RAPL_PL1):
+        write_sys_val(RAPL_PL1, cpu_pl1 * 1000000)
+    if os.path.exists(RAPL_PL2):
+        write_sys_val(RAPL_PL2, int(cpu_pl1 * 1.5) * 1000000)
+    for epp_f in glob.glob(EPP_GLOB):
+        write_sys_val(epp_f, "balance_performance")
+    if gpu_info["has_gpu"] and gpu_limit > 0:
+        run_cmd(f"nvidia-smi -pl {gpu_limit}")
+    return True
+
+def detect_active_profile(cpu_info, gpu_info, profiles):
+    cur_pl1 = cpu_info["pl1_w"]
+    cur_gpu = int(gpu_info["power_limit_w"]) if gpu_info["has_gpu"] else 0
+
+    for key, prof in profiles.items():
+        if prof["cpu_pl1_w"] == cur_pl1:
+            if not gpu_info["has_gpu"] or prof["gpu_limit_w"] == cur_gpu:
+                return key
+    return "custom"
+
+# --- Interactive Curses TUI ---
+def run_tui(stdscr, cpu_info, gpu_info, kernel_info, profiles):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_GREEN, -1)
+    curses.init_pair(2, curses.COLOR_CYAN, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(4, curses.COLOR_RED, -1)
+    curses.init_pair(5, curses.COLOR_MAGENTA, -1)
+
+    profile_keys = list(profiles.keys())
+    selected_idx = 0
+
+    active_key = detect_active_profile(cpu_info, gpu_info, profiles)
+    if active_key in profile_keys:
+        selected_idx = profile_keys.index(active_key)
+
+    msg = "Ready. Use [↑/↓] or [j/k] to navigate, [Enter] to apply, [c] for Custom Tuner, [q] to exit."
+
+    while True:
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+
+        # Header
+        title = "⚡ POWER-MODE UNIVERSAL LINUX PROFILER"
+        if SIMULATION_MODE:
+            title += " [SIMULATION / DRY-RUN]"
+        stdscr.addstr(1, 2, title, curses.color_pair(2) | curses.A_BOLD)
+        stdscr.addstr(2, 2, "─" * min(w - 4, 76), curses.A_DIM)
+
+        # Hardware & Kernel Info
+        k_tag = " (CachyOS Kernel)" if kernel_info["is_cachyos"] else ""
+        stdscr.addstr(3, 2, f"CPU: {cpu_info['name']} ({cpu_info['cores']} Cores) | Kernel: {kernel_info['version']}{k_tag}", curses.A_DIM)
+        if gpu_info["has_gpu"]:
+            stdscr.addstr(4, 2, f"GPU: {gpu_info['name']} | Live Draw: {gpu_info['power_draw_w']} | Temp: {gpu_info['temp']}", curses.color_pair(3))
+        else:
+            stdscr.addstr(4, 2, "GPU: Integrated / None (CPU-Accelerated Mode Active)", curses.color_pair(3))
+
+        # Warning
+        stdscr.addstr(6, 2, "⚠️  SAFETY NOTE: Verify adequate cooling and OEM AC adapter capacity.", curses.color_pair(4) | curses.A_BOLD)
+
+        # Profile Options
+        row = 8
+        for i, key in enumerate(profile_keys):
+            prof = profiles[key]
+            is_sel = (i == selected_idx)
+            is_act = (key == active_key)
+
+            marker = "➤ " if is_sel else "  "
+            act_tag = " [ACTIVE]" if is_act else ""
+
+            attr = curses.A_BOLD
+            if is_sel:
+                attr |= curses.color_pair(2) | curses.A_REVERSE
+            elif is_act:
+                attr |= curses.color_pair(1)
+
+            gpu_txt = f" | GPU: {prof['gpu_limit_w']}W" if gpu_info["has_gpu"] else ""
+            line = f"{marker}[ {key.upper()} ] {prof['name']}{act_tag} (CPU: {prof['cpu_pl1_w']}W{gpu_txt})"
+            stdscr.addstr(row, 2, line[:w-4], attr)
+
+            desc_attr = curses.color_pair(2) if is_sel else curses.A_DIM
+            stdscr.addstr(row + 1, 6, prof['desc'][:w-8], desc_attr)
+            row += 3
+
+        # Custom entry
+        is_custom_sel = (selected_idx == len(profile_keys))
+        custom_marker = "➤ " if is_custom_sel else "  "
+        c_attr = (curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD) if is_custom_sel else curses.color_pair(5)
+        stdscr.addstr(row, 2, f"{custom_marker}[ CUSTOM ] Interactive Power Setting Tuner (Manual Wattage Sliders)", c_attr)
+
+        # Status / Message bar
+        stdscr.addstr(h - 2, 2, msg[:w-4], curses.color_pair(3) | curses.A_BOLD)
+
+        stdscr.refresh()
+
+        ch = stdscr.getch()
+        if ch in [ord('q'), ord('Q'), 27]: # q or ESC
+            break
+        elif ch in [curses.KEY_UP, ord('k')]:
+            selected_idx = (selected_idx - 1) % (len(profile_keys) + 1)
+        elif ch in [curses.KEY_DOWN, ord('j')]:
+            selected_idx = (selected_idx + 1) % (len(profile_keys) + 1)
+        elif ch in [ord('c'), ord('C')]:
+            selected_idx = len(profile_keys)
+            run_custom_editor(stdscr, cpu_info, gpu_info)
+            # Refresh telemetry
+            cpu_info = HardwareDetector.detect_cpu()
+            gpu_info = HardwareDetector.detect_gpu()
+            active_key = detect_active_profile(cpu_info, gpu_info, profiles)
+        elif ch in [10, 13, curses.KEY_ENTER]:
+            if selected_idx == len(profile_keys):
+                run_custom_editor(stdscr, cpu_info, gpu_info)
+                cpu_info = HardwareDetector.detect_cpu()
+                gpu_info = HardwareDetector.detect_gpu()
+                active_key = detect_active_profile(cpu_info, gpu_info, profiles)
+            else:
+                target_key = profile_keys[selected_idx]
+                msg = f"Applying profile [{target_key.upper()}]..."
+                stdscr.addstr(h - 2, 2, msg.ljust(w - 4), curses.color_pair(3) | curses.A_BOLD)
+                stdscr.refresh()
+
+                curses.endwin()
+                ok = apply_profile(target_key, profiles, gpu_info)
+                stdscr = curses.initscr()
+                curses.curs_set(0)
+
+                if ok:
+                    msg = f"✓ Successfully applied profile: {target_key.upper()}"
+                    cpu_info = HardwareDetector.detect_cpu()
+                    gpu_info = HardwareDetector.detect_gpu()
+                    active_key = target_key
+                else:
+                    msg = f"✗ Failed to apply profile: {target_key.upper()} (Check root/sudo permissions)"
+
+def run_custom_editor(stdscr, cpu_info, gpu_info):
+    curses.curs_set(0)
+    has_gpu = gpu_info["has_gpu"]
+
+    edit_cpu = cpu_info["pl1_w"] if cpu_info["pl1_w"] > 0 else 35
+    edit_gpu = int(gpu_info["power_limit_w"]) if has_gpu else 0
+    gpu_min = gpu_info["min_limit"] if has_gpu else 0
+    gpu_max = gpu_info["max_limit"] if has_gpu else 0
+
+    field_idx = 0 # 0 = CPU, 1 = GPU
+
+    while True:
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+
+        stdscr.addstr(1, 2, "⚙️  CUSTOM POWER SETTING EDITOR", curses.color_pair(5) | curses.A_BOLD)
+        stdscr.addstr(2, 2, "─" * min(w - 4, 76), curses.A_DIM)
+        stdscr.addstr(4, 2, "Adjust sustained power envelopes using [← / →] in 5W steps.", curses.A_DIM)
+
+        # Field 0: CPU PL1
+        sel_0 = (field_idx == 0)
+        attr_0 = (curses.color_pair(2) | curses.A_REVERSE | curses.A_BOLD) if sel_0 else curses.color_pair(2)
+        stdscr.addstr(6, 4, f"CPU Sustained Power Limit (PL1): [ {edit_cpu:3d} W ]", attr_0)
+        stdscr.addstr(7, 6, "Sets long-duration CPU package power cap via Intel RAPL.", curses.A_DIM)
+
+        # Field 1: GPU TGP
+        if has_gpu:
+            sel_1 = (field_idx == 1)
+            attr_1 = (curses.color_pair(3) | curses.A_REVERSE | curses.A_BOLD) if sel_1 else curses.color_pair(3)
+            stdscr.addstr(9, 4, f"GPU Total Graphics Power (TGP): [ {edit_gpu:3d} W ] (Range: {gpu_min}W - {gpu_max}W)", attr_1)
+            stdscr.addstr(10, 6, "Sets discrete NVIDIA GPU power limiter via nvidia-smi.", curses.A_DIM)
+
+        stdscr.addstr(13, 2, "Controls: [↑/↓] Change field | [←/→] Adjust wattage | [Enter] Apply | [Esc] Cancel", curses.color_pair(3) | curses.A_BOLD)
+
+        stdscr.refresh()
+        ch = stdscr.getch()
+
+        if ch in [27, ord('q'), ord('Q')]: # Esc / Cancel
+            break
+        elif ch in [curses.KEY_UP, curses.KEY_DOWN, ord('j'), ord('k')]:
+            if has_gpu:
+                field_idx = 1 - field_idx
+        elif ch in [curses.KEY_LEFT, ord('h')]:
+            if field_idx == 0:
+                edit_cpu = max(10, edit_cpu - 5)
+            elif has_gpu:
+                edit_gpu = max(gpu_min, edit_gpu - 5)
+        elif ch in [curses.KEY_RIGHT, ord('l')]:
+            if field_idx == 0:
+                edit_cpu = min(150, edit_cpu + 5)
+            elif has_gpu:
+                edit_gpu = min(gpu_max, edit_gpu + 5)
+        elif ch in [10, 13, curses.KEY_ENTER]:
+            curses.endwin()
+            apply_custom(edit_cpu, edit_gpu, gpu_info)
+            break
+
+# --- CLI / JSON Entrypoint ---
+def main():
+    global SIMULATION_MODE
+
+    parser = argparse.ArgumentParser(description="Universal Linux Dynamic CPU/GPU Power Controller")
+    parser.add_argument("--json", action="store_true", help="Emit JSON hardware telemetry and exit")
+    parser.add_argument("--status", action="store_true", help="Print active power status and exit")
+    parser.add_argument("--simulate", "--dry-run", action="store_true", help="Simulation mode: test hardware detection without modifying system state")
+    parser.add_argument("--custom", nargs=2, type=int, metavar=("CPU_PL1_W", "GPU_TGP_W"), help="Apply custom CPU PL1 and GPU TGP wattages")
+
+    # Probing
+    kernel_info = HardwareDetector.detect_kernel()
+    cpu_info = HardwareDetector.detect_cpu()
+    gpu_info = HardwareDetector.detect_gpu()
+    profiles = build_profiles(cpu_info, gpu_info, kernel_info)
+
+    # Add dynamic flags
+    for key in profiles.keys():
+        parser.add_argument(f"--{key}", action="store_true", help=f"Apply {profiles[key]['name']}")
+
+    args = parser.parse_args()
+
+    if args.simulate:
+        SIMULATION_MODE = True
+
+    active_key = detect_active_profile(cpu_info, gpu_info, profiles)
+
+    if args.json:
+        out = {
+            "active_profile": active_key,
+            "profile_name": profiles.get(active_key, {}).get("name", "Custom Power Limit"),
+            "cpu_name": cpu_info["name"],
+            "cpu_pl1_w": cpu_info["pl1_w"],
+            "cpu_pl2_w": cpu_info["pl2_w"],
+            "cpu_epp": cpu_info["epp"],
+            "platform_profile": cpu_info["platform_profile"],
+            "has_gpu": gpu_info["has_gpu"],
+            "gpu_name": gpu_info["name"],
+            "gpu_power_draw": gpu_info["power_draw_w"],
+            "gpu_power_limit": f"{gpu_info['power_limit_w']:.2f} W" if gpu_info["has_gpu"] else "N/A",
+            "gpu_temp": gpu_info["temp"],
+            "gpu_min_limit": gpu_info["min_limit"],
+            "gpu_max_limit": gpu_info["max_limit"],
+            "kernel": kernel_info["version"],
+            "is_cachyos": kernel_info["is_cachyos"],
+            "simulation": SIMULATION_MODE
+        }
+        print(json.dumps(out, indent=2))
+        return
+
+    if args.status:
+        print(f"Kernel: {kernel_info['version']} (CachyOS: {kernel_info['is_cachyos']})")
+        print(f"CPU: {cpu_info['name']} | PL1: {cpu_info['pl1_w']}W | PL2: {cpu_info['pl2_w']}W | EPP: {cpu_info['epp']}")
+        if gpu_info["has_gpu"]:
+            print(f"GPU: {gpu_info['name']} | Limit: {gpu_info['power_limit_w']}W | Draw: {gpu_info['power_draw_w']} | Temp: {gpu_info['temp']}")
+        else:
+            print("GPU: Integrated / None (CPU-Accelerated Mode)")
+        print(f"Active Profile: {active_key.upper()} ({profiles.get(active_key, {}).get('name', 'Custom')})")
+        return
+
+    if args.custom:
+        cpu_w, gpu_w = args.custom
+        ok = apply_custom(cpu_w, gpu_w, gpu_info)
+        print(f"Custom Power Limits applied: CPU PL1={cpu_w}W, GPU TGP={gpu_w}W (Success: {ok})")
+        return
+
+    # Check named profiles
+    for key in profiles.keys():
+        if getattr(args, key, False):
+            ok = apply_profile(key, profiles, gpu_info)
+            print(f"Applied profile [{key.upper()}]: Success: {ok}")
+            return
+
+    # Default: launch curses interactive TUI
+    curses.wrapper(run_tui, cpu_info, gpu_info, kernel_info, profiles)
+
+if __name__ == "__main__":
+    main()

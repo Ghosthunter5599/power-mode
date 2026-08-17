@@ -1,0 +1,9 @@
+// Waybar Custom Module Definition for power-mode
+"custom/power-mode": {
+    "exec": "power-mode --json",
+    "return-type": "json",
+    "format": "⚡ {}",
+    "interval": 3,
+    "on-click": "power-mode",
+    "tooltip": true
+}

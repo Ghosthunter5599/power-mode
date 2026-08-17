@@ -1,0 +1,11 @@
+[Unit]
+Description=Power Mode Startup Profile Restorer
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/power-mode --balanced
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

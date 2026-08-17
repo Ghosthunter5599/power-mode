@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "power-mode",
+  "name": "Power Mode Controller",
+  "version": "1.0.0",
+  "author": "b47m4n",
+  "description": "Dynamic CPU/GPU Power Profile Switcher & Hardware Telemetry",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "PowerMode.qml"
+  },
+  "barWidget": {
+    "displayName": "Power Mode",
+    "description": "Displays active power profile and allows interactive profile switching",
+    "category": "Hardware",
+    "allowMultiple": false
+  }
+}
