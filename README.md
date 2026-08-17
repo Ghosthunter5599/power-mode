@@ -81,8 +81,23 @@ By **actively regulating and capping the power draw of the idle or less-critical
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Removal
 
+### 1. As an Omarchy Shell Plugin (Recommended for Omarchy Users)
+To install and enable the top-bar widget and popup panel directly via Omarchy's plugin manager:
+```bash
+omarchy plugin add https://github.com/Ghosthunter5599/power-mode --enable
+```
+
+To remove the plugin:
+```bash
+omarchy plugin remove ghosthunter5599.power-mode
+```
+
+---
+
+### 2. Standalone Linux Installation (Any Distribution)
+To install the universal CLI and interactive TUI on any Linux system (Arch, Fedora, Ubuntu, Debian, Void, NixOS, CachyOS):
 ```bash
 git clone https://github.com/Ghosthunter5599/power-mode.git
 cd power-mode
@@ -90,10 +105,9 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Or install manually:
+To uninstall:
 ```bash
-sudo cp bin/power-mode /usr/local/bin/power-mode
-sudo chmod +x /usr/local/bin/power-mode
+sudo rm -f /usr/local/bin/power-mode ~/.local/bin/power-mode
 ```
 
 ---
