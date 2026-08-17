@@ -51,7 +51,7 @@
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/b47m4n/power-mode.git
+git clone https://github.com/Ghosthunter5599/power-mode.git
 cd power-mode
 chmod +x install.sh
 ./install.sh
@@ -120,4 +120,4 @@ Add the custom module snippet from `extensions/waybar/config.jsonc` to your `~/.
 
 ## 📄 License
 
-MIT © [b47m4n](https://github.com/b47m4n)
+MIT © [Ghosthunter5599](https://github.com/Ghosthunter5599)
