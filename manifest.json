@@ -5,10 +5,18 @@
   "version": "1.0.0",
   "author": "Ghosthunter5599",
   "description": "Dynamic CPU/GPU Power Profile Switcher, RAPL Wattage Tuner & Hardware Telemetry",
+  "homepage": "https://github.com/Ghosthunter5599/power-mode",
   "repository": "https://github.com/Ghosthunter5599/power-mode",
   "license": "MIT",
   "kinds": [
     "bar-widget"
+  ],
+  "tags": [
+    "hardware",
+    "power",
+    "gpu",
+    "cpu",
+    "battery"
   ],
   "entryPoints": {
     "barWidget": "PowerMode.qml"
