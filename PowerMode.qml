@@ -23,9 +23,8 @@ Panel {
 
   property int previewCpuPL1: -1
   property int previewGpuLimit: -1
-
-  readonly property var profileKeys: ["gpu", "cachy", "balanced", "cpu"]
-  readonly property var profileLabels: ["GPU", "Cachy", "Balanced", "CPU"]
+  readonly property var profileKeys: ["gpu", "cachy", "balanced", "cpu", "custom"]
+  readonly property var profileLabels: ["GPU", "Cachy", "Balanced", "CPU", "Custom"]
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -51,6 +50,12 @@ Panel {
     if (!stateProc.running) stateProc.running = true
   }
 
+  function runAction(args) {
+    if (actionProc.running) actionProc.running = false
+    actionProc.command = args
+    actionProc.running = true
+  }
+
   function setProfile(key) {
     previewCpuPL1 = -1
     previewGpuLimit = -1
@@ -58,23 +63,27 @@ Panel {
     if (key === "gpu") {
       root.cpuPL1 = 35
       root.gpuLimit = 95
+      runAction(["power-mode", "--gpu"])
     } else if (key === "cachy") {
       root.cpuPL1 = 85
       root.gpuLimit = 95
+      runAction(["power-mode", "--cachy"])
     } else if (key === "balanced") {
       root.cpuPL1 = 25
       root.gpuLimit = 60
+      runAction(["power-mode", "--balanced"])
     } else if (key === "cpu") {
       root.cpuPL1 = 85
       root.gpuLimit = 40
+      runAction(["power-mode", "--cpu"])
+    } else if (key === "custom") {
+      runAction(["power-mode", "--custom", String(root.cpuPL1), String(root.gpuLimit)])
     }
-    actionProc.command = ["power-mode", "--" + key]
-    if (!actionProc.running) actionProc.running = true
   }
 
   function applyCustomLimits(cpu, gpu) {
-    actionProc.command = ["power-mode", "--custom", String(cpu), String(gpu)]
-    if (!actionProc.running) actionProc.running = true
+    root.activeProfile = "custom"
+    runAction(["power-mode", "--custom", String(cpu), String(gpu)])
   }
 
   IpcHandler {
@@ -89,14 +98,18 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
-      refresh()
       previewCpuPL1 = -1
       previewGpuLimit = -1
+      refresh()
+      stateTimer.restart()
+    } else {
+      stateTimer.stop()
     }
   }
 
   Timer {
-    interval: 3000
+    id: stateTimer
+    interval: 2500
     running: root.opened
     repeat: true
     onTriggered: root.refresh()
@@ -110,17 +123,19 @@ Panel {
       onStreamFinished: {
         try {
           var d = JSON.parse(text)
-          root.activeProfile = d.active_profile || "custom"
-          root.profileName = d.profile_name || "Custom"
-          root.cpuPL1 = parseInt(d.cpu_pl1_w) || 35
-          root.cpuPL2 = parseInt(d.cpu_pl2_w) || 55
-          root.cpuEPP = d.cpu_epp || "balance_performance"
-          root.platformProfile = d.platform_profile || "performance"
+          if (root.previewCpuPL1 < 0 && root.previewGpuLimit < 0) {
+            root.activeProfile = d.active_profile || "custom"
+            root.profileName = d.profile_name || "Custom"
+            root.cpuPL1 = parseInt(d.cpu_pl1_w) || 35
+            root.cpuPL2 = parseInt(d.cpu_pl2_w) || 55
+            root.cpuEPP = d.cpu_epp || "balance_performance"
+            root.platformProfile = d.platform_profile || "performance"
+
+            var gLim = String(d.gpu_power_limit || "").replace("W", "").trim()
+            root.gpuLimit = parseInt(gLim) || 60
+          }
           root.gpuDraw = d.gpu_power_draw || "0 W"
           root.gpuTemp = d.gpu_temp || "0 °C"
-
-          var gLim = String(d.gpu_power_limit || "").replace("W", "").trim()
-          root.gpuLimit = parseInt(gLim) || 60
         } catch (e) {}
       }
     }
@@ -128,12 +143,21 @@ Panel {
 
   Process {
     id: actionProc
-    onExited: root.refresh()
+    onExited: {
+      actionTimer.restart()
+    }
+  }
+
+  Timer {
+    id: actionTimer
+    interval: 400
+    repeat: false
+    onTriggered: root.refresh()
   }
 
   Timer {
     id: applyDebounce
-    interval: 350
+    interval: 300
     repeat: false
     onTriggered: {
       var c = root.displayCpuPL1()
@@ -324,9 +348,11 @@ Panel {
               value: root.displayCpuPL1()
               onMoved: function(v) {
                 root.previewCpuPL1 = Math.round(v)
+                root.activeProfile = "custom"
               }
               onReleased: function(v) {
                 root.previewCpuPL1 = Math.round(v)
+                root.activeProfile = "custom"
                 applyDebounce.restart()
               }
             }
@@ -388,9 +414,11 @@ Panel {
               value: root.displayGpuLimit()
               onMoved: function(v) {
                 root.previewGpuLimit = Math.round(v)
+                root.activeProfile = "custom"
               }
               onReleased: function(v) {
                 root.previewGpuLimit = Math.round(v)
+                root.activeProfile = "custom"
                 applyDebounce.restart()
               }
             }
