@@ -116,21 +116,40 @@ class HardwareDetector:
         # Check NVIDIA
         nv_out = run_cmd("nvidia-smi --query-gpu=name,power.limit,power.draw,temperature.gpu,power.min_limit,power.max_limit,power.default_limit --format=csv,noheader,nounits")
         if nv_out and "," in nv_out:
-            parts = [p.strip() for p in nv_out.split(",")]
-            try:
+            line = nv_out.split("\n")[0]
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 7:
+                name = parts[0]
+
+                def safe_float(val, default=0.0):
+                    try:
+                        clean = str(val).replace("[N/A]", "").replace("N/A", "").strip()
+                        return float(clean) if clean else default
+                    except Exception:
+                        return default
+
+                min_lim = int(safe_float(parts[4], 5.0))
+                max_lim = int(safe_float(parts[5], 100.0))
+                def_lim = int(safe_float(parts[6], 60.0))
+                cur_lim = safe_float(parts[1], float(def_lim))
+
+                draw_val = parts[2]
+                temp_val = parts[3]
+
+                draw_str = f"{draw_val} W" if draw_val and draw_val != "[N/A]" else "0 W"
+                temp_str = f"{temp_val} °C" if temp_val and temp_val != "[N/A]" else "0 °C"
+
                 return {
                     "type": "nvidia",
                     "has_gpu": True,
-                    "name": parts[0],
-                    "power_limit_w": float(parts[1]),
-                    "power_draw_w": f"{parts[2]} W",
-                    "temp": f"{parts[3]} °C",
-                    "min_limit": int(float(parts[4])),
-                    "max_limit": int(float(parts[5])),
-                    "default_limit": int(float(parts[6]))
+                    "name": name,
+                    "power_limit_w": cur_lim,
+                    "power_draw_w": draw_str,
+                    "temp": temp_str,
+                    "min_limit": min_lim,
+                    "max_limit": max_lim,
+                    "default_limit": def_lim
                 }
-            except Exception:
-                pass
 
         # Fallback: Check if AMD/Intel discrete or integrated
         return {
