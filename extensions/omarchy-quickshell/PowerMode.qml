@@ -244,8 +244,12 @@ Panel {
                 horizontalPadding: Style.space(4)
                 verticalPadding: Style.space(6)
                 bordered: true
+                selected: root.activeProfile === modelData
                 active: root.activeProfile === modelData
-                onClicked: root.setProfile(modelData)
+                onClicked: {
+                  root.activeProfile = modelData
+                  root.setProfile(modelData)
+                }
               }
             }
           }

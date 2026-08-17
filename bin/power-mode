@@ -322,10 +322,17 @@ def detect_active_profile(cpu_info, gpu_info, profiles):
     cur_pl1 = cpu_info["pl1_w"]
     cur_gpu = int(gpu_info["power_limit_w"]) if gpu_info["has_gpu"] else 0
 
+    # 1. Exact match (CPU + GPU)
     for key, prof in profiles.items():
         if prof["cpu_pl1_w"] == cur_pl1:
             if not gpu_info["has_gpu"] or prof["gpu_limit_w"] == cur_gpu:
                 return key
+
+    # 2. Match by CPU PL1 target
+    for key, prof in profiles.items():
+        if prof["cpu_pl1_w"] == cur_pl1:
+            return key
+
     return "custom"
 
 # --- Interactive Curses TUI ---
