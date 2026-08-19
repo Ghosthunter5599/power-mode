@@ -24,27 +24,57 @@ PLATFORM_PROFILE_CHOICES = "/sys/firmware/acpi/platform_profile_choices"
 
 # --- Simulation Flag ---
 SIMULATION_MODE = False
-STATE_FILE = "/tmp/power_mode_state.json"
+RUN_STATE_FILE = "/run/power-mode/state.json"
+
+def get_state_paths():
+    paths = [RUN_STATE_FILE]
+    xdg_runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg_runtime:
+        paths.append(os.path.join(xdg_runtime, "power-mode", "state.json"))
+    xdg_state = os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state"))
+    paths.append(os.path.join(xdg_state, "power-mode", "state.json"))
+    return paths
+
+def safe_write_json(filepath, data, mode=0o644):
+    """Safely writes JSON state avoiding symlink attacks and race conditions."""
+    try:
+        dirpath = os.path.dirname(filepath)
+        os.makedirs(dirpath, exist_ok=True)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        if os.path.islink(filepath):
+            os.unlink(filepath)
+        fd = os.open(filepath, flags, mode)
+        with open(fd, "w") as f:
+            json.dump(data, f)
+        return True
+    except Exception:
+        return False
 
 def save_state(profile_key, cpu_pl1, gpu_limit):
-    try:
-        with open(STATE_FILE, "w") as f:
-            json.dump({
-                "active_profile": profile_key,
-                "cpu_pl1_w": cpu_pl1,
-                "gpu_limit_w": gpu_limit
-            }, f)
-        os.chmod(STATE_FILE, 0o666)
-    except Exception:
-        pass
+    data = {
+        "active_profile": profile_key,
+        "cpu_pl1_w": cpu_pl1,
+        "gpu_limit_w": gpu_limit
+    }
+    if safe_write_json(RUN_STATE_FILE, data, mode=0o644):
+        return True
+    for path in get_state_paths()[1:]:
+        if safe_write_json(path, data, mode=0o600):
+            return True
+    return False
 
 def load_state():
-    try:
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, "r") as f:
-                return json.load(f)
-    except Exception:
-        pass
+    for path in get_state_paths():
+        try:
+            if os.path.islink(path):
+                continue
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    return json.load(f)
+        except Exception:
+            continue
     return None
 
 def is_root():
